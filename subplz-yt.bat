@@ -1,2 +1,2 @@
 @echo off
-powershell -ExecutionPolicy Bypass -File "C:\Tools\subplz-yt.ps1" %*
+powershell -ExecutionPolicy Bypass -File "%~dp0subplz-yt.ps1" %*

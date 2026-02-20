@@ -12,33 +12,30 @@ A wrapper script that downloads a YouTube video, generates accurate subtitles us
 ## Prerequisites
 
 - Windows 10/11
-- [Git](https://git-scm.com/)
 - NVIDIA GPU recommended (CUDA-accelerated transcription is ~10x faster than CPU)
 
 ## Installation
 
-### 1. Install dependencies
+### 1. Install tools
 
 ```powershell
+winget install Git.Git
 winget install astral-sh.uv
 winget install ffmpeg
-winget install mpv
 ```
 
-Install yt-dlp as a global tool via uv:
+Close and reopen your terminal, then install yt-dlp:
 
 ```powershell
 uv tool install yt-dlp
 uv tool update-shell
 ```
 
-Close and reopen your terminal after these installs.
-
 ### 2. Install SubPlz from source
 
 ```powershell
-git clone https://github.com/kanjieater/SubPlz.git
-cd SubPlz
+git clone https://github.com/kanjieater/SubPlz.git C:\Tools\SubPlz
+cd C:\Tools\SubPlz
 uv venv --python 3.11 .venv
 .venv\Scripts\activate
 uv pip install -e .
@@ -47,58 +44,31 @@ uv pip install -e .
 
 > **Why setuptools<78?** Newer versions removed `pkg_resources`, which `ctranslate2` (a SubPlz dependency) still requires.
 
-#### GPU support (NVIDIA)
-
-With the virtual environment still active, install PyTorch with CUDA:
+For **NVIDIA GPU** users, install PyTorch with CUDA (with the venv still active):
 
 ```powershell
 .venv\Scripts\pip.exe install torch torchaudio --index-url https://download.pytorch.org/whl/cu128 --force-reinstall
-```
-
-Verify:
-
-```powershell
 python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
-```
-
-Deactivate when done:
-
-```powershell
 deactivate
 ```
 
-### 3. Set up the wrapper script
-
-Clone this repo and place the scripts somewhere on your PATH:
+### 3. Install the wrapper script
 
 ```powershell
-git clone https://github.com/JustVinny1/subplz-yt.git
+git clone https://github.com/YOUR_USERNAME/subplz-yt.git C:\Tools\subplz-yt
 ```
 
-Copy `subplz-yt.ps1` and `subplz-yt.bat` to a directory that's on your PATH. If you don't have one, create one and add it:
+### 4. Configure environment variables
+
+Run these once to set everything up. If you installed SubPlz somewhere other than `C:\Tools\SubPlz`, change the `SUBPLZ_PATH` value accordingly.
 
 ```powershell
-mkdir C:\Scripts
-Copy-Item subplz-yt\subplz-yt.ps1 C:\Scripts\
-Copy-Item subplz-yt\subplz-yt.bat C:\Scripts\
-[Environment]::SetEnvironmentVariable("Path", $env:Path + ";C:\Scripts", "User")
+[Environment]::SetEnvironmentVariable("Path", $env:Path + ";C:\Tools\subplz-yt", "User")
+[Environment]::SetEnvironmentVariable("SUBPLZ_PATH", "C:\Tools\SubPlz", "User")
+[Environment]::SetEnvironmentVariable("BASE_PATH", "C:\Tools\SubPlz\config", "User")
 ```
 
-### 4. Configure paths
-
-Edit `subplz-yt.ps1` and update the `$SubPlzExe` variable to point to your SubPlz installation:
-
-```powershell
-$SubPlzExe = "C:\path\to\SubPlz\.venv\Scripts\subplz.exe"
-```
-
-Optionally, set `BASE_PATH` to prevent SubPlz from creating config folders in your working directory:
-
-```powershell
-[Environment]::SetEnvironmentVariable("BASE_PATH", "C:\path\to\SubPlz\config", "User")
-```
-
-Close and reopen your terminal after making environment variable changes.
+Close and reopen your terminal.
 
 ## Usage
 
@@ -121,6 +91,13 @@ VideoTitle.mkv   ← video with embedded subtitles
 VideoTitle.srt   ← standalone subtitle file
 ```
 
+To update the script later:
+
+```powershell
+cd C:\Tools\subplz-yt
+git pull
+```
+
 ## Troubleshooting
 
 ### Script execution blocked
@@ -128,10 +105,10 @@ VideoTitle.srt   ← standalone subtitle file
 The included `.bat` launcher bypasses execution policy automatically. If you want to run the `.ps1` script directly, either unblock the file:
 
 ```powershell
-Unblock-File -Path "C:\Scripts\subplz-yt.ps1"
+Unblock-File -Path "C:\Tools\subplz-yt\subplz-yt.ps1"
 ```
 
-Or set the standard developer execution policy (common practice, scoped to your user account only):
+Or set the standard developer execution policy (scoped to your user account only):
 
 ```powershell
 Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
@@ -142,7 +119,7 @@ Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
 Ensure PyTorch was installed with CUDA support. Activate the SubPlz virtual environment and verify:
 
 ```powershell
-cd path\to\SubPlz
+cd C:\Tools\SubPlz
 .venv\Scripts\activate
 python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
 ```
@@ -156,6 +133,18 @@ Install an older version of setuptools in the SubPlz virtual environment:
 ```powershell
 .venv\Scripts\pip.exe install "setuptools<78"
 ```
+
+### SubPlz not found
+
+If you installed SubPlz somewhere other than `C:\Tools\SubPlz`, set the `SUBPLZ_PATH` environment variable:
+
+```powershell
+[Environment]::SetEnvironmentVariable("SUBPLZ_PATH", "C:\your\path\to\SubPlz", "User")
+```
+
+## Optional
+
+- [mpv](https://mpv.io/) — recommended video player with excellent subtitle support. Install via `winget install mpv`.
 
 ## License
 

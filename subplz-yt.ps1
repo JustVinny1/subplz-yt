@@ -4,6 +4,9 @@
 .USAGE
     subplz-yt "https://www.youtube.com/watch?v=VIDEO_ID"
     subplz-yt "https://www.youtube.com/watch?v=VIDEO_ID" -Model large
+.CONFIGURATION
+    Set the SUBPLZ_PATH environment variable to your SubPlz installation directory.
+    Defaults to C:\Tools\SubPlz if not set.
 #>
 
 param(
@@ -16,7 +19,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 $CallingDir = (Get-Location).Path
-$SubPlzExe = "C:\Tools\SubPlz\.venv\Scripts\subplz.exe"
+$SubPlzRoot = if ($env:SUBPLZ_PATH) { $env:SUBPLZ_PATH } else { "C:\Tools\SubPlz" }
+$SubPlzExe = Join-Path $SubPlzRoot ".venv\Scripts\subplz.exe"
 $TempDir = Join-Path $env:TEMP "subplz-work-$(Get-Random)"
 
 # --- Preflight checks ---
@@ -27,7 +31,7 @@ foreach ($cmd in @("yt-dlp", "ffmpeg")) {
     }
 }
 if (-not (Test-Path $SubPlzExe)) {
-    Write-Error "SubPlz not found at $SubPlzExe. Check the path."
+    Write-Error "SubPlz not found at $SubPlzExe. Set the SUBPLZ_PATH environment variable to your SubPlz installation directory."
     exit 1
 }
 
