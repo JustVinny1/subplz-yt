@@ -1,3 +1,4 @@
+# LITERALLY EVERYTHING WAS VIBECODDED PROCEED WITH CAUTION
 # subplz-yt
 
 A simple wrapper script that downloads a YouTube video, generates accurate subtitles using [SubPlz](https://github.com/kanjieater/SubPlz), and outputs a video with embedded subs — all in one command.
