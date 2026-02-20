@@ -4,6 +4,7 @@
 .USAGE
     subplz-yt "https://www.youtube.com/watch?v=VIDEO_ID"
     subplz-yt "https://www.youtube.com/watch?v=VIDEO_ID" -Model large
+    subplz-yt "https://www.youtube.com/watch?v=VIDEO_ID" -SubsOnly
 .CONFIGURATION
     Set the SUBPLZ_PATH environment variable to your SubPlz installation directory.
     Defaults to C:\Tools\SubPlz if not set.
@@ -14,7 +15,9 @@ param(
     [string]$Url,
 
     [Parameter()]
-    [string]$Model = "turbo"
+    [string]$Model = "turbo",
+
+    [switch]$SubsOnly
 )
 
 $ErrorActionPreference = "Stop"
@@ -35,23 +38,32 @@ if (-not (Test-Path $SubPlzExe)) {
     exit 1
 }
 
+if ($SubsOnly) {
+    $TotalSteps = 2
+} else {
+    $TotalSteps = 3
+}
+
 try {
     # --- Step 1: Download ---
-    Write-Host "`n[1/3] Downloading video..." -ForegroundColor Cyan
+    Write-Host "`n[1/$TotalSteps] Downloading $(if ($SubsOnly) {'audio'} else {'video'})..." -ForegroundColor Cyan
     New-Item -ItemType Directory -Path $TempDir -Force | Out-Null
 
-    # Download as mkv to ensure subtitle-compatible container
-    yt-dlp -o "$TempDir\%(title)s.%(ext)s" --merge-output-format mkv $Url
+    if ($SubsOnly) {
+        yt-dlp -o "$TempDir\%(title)s.%(ext)s" -x --audio-format mp3 $Url
+    } else {
+        yt-dlp -o "$TempDir\%(title)s.%(ext)s" --merge-output-format mkv $Url
+    }
     if ($LASTEXITCODE -ne 0) { throw "yt-dlp failed." }
 
-    $VideoFile = Get-ChildItem -Path $TempDir -File | Where-Object { $_.Extension -match '\.(mkv|mp4|webm|avi)$' } | Select-Object -First 1
-    if (-not $VideoFile) { throw "No video file found after download." }
+    $MediaFile = Get-ChildItem -Path $TempDir -File | Where-Object { $_.Extension -match '\.(mkv|mp4|webm|avi|mp3|m4a|opus|wav)$' } | Select-Object -First 1
+    if (-not $MediaFile) { throw "No media file found after download." }
 
-    $BaseName = $VideoFile.BaseName
-    Write-Host "  Downloaded: $($VideoFile.Name)" -ForegroundColor Green
+    $BaseName = $MediaFile.BaseName
+    Write-Host "  Downloaded: $($MediaFile.Name)" -ForegroundColor Green
 
     # --- Step 2: Generate subtitles ---
-    Write-Host "`n[2/3] Generating subtitles (model: $Model)..." -ForegroundColor Cyan
+    Write-Host "`n[2/$TotalSteps] Generating subtitles (model: $Model)..." -ForegroundColor Cyan
     & $SubPlzExe gen -d $TempDir --model $Model --vad --stable-ts
 
     # SubPlz may return non-zero even on success, so check for actual output
@@ -59,21 +71,28 @@ try {
     if (-not $SrtFile) { throw "No subtitle file generated. SubPlz may have failed." }
     Write-Host "  Generated: $($SrtFile.Name)" -ForegroundColor Green
 
-    # --- Step 3: Embed subtitles and copy .srt ---
-    Write-Host "`n[3/3] Embedding subtitles..." -ForegroundColor Cyan
-    $OutputFile = Join-Path $CallingDir "$BaseName.mkv"
-    $OutputSrt = Join-Path $CallingDir "$BaseName.srt"
+    if ($SubsOnly) {
+        # --- Subs only: just copy the .srt ---
+        $OutputSrt = Join-Path $CallingDir "$BaseName.srt"
+        Copy-Item -Path $SrtFile.FullName -Destination $OutputSrt -Force
+        Write-Host "  Subs: $OutputSrt" -ForegroundColor Green
+    } else {
+        # --- Step 3: Embed subtitles and copy .srt ---
+        Write-Host "`n[3/$TotalSteps] Embedding subtitles..." -ForegroundColor Cyan
+        $OutputFile = Join-Path $CallingDir "$BaseName.mkv"
+        $OutputSrt = Join-Path $CallingDir "$BaseName.srt"
 
-    # Avoid collision with temp file if CallingDir == TempDir
-    $MuxTemp = Join-Path $TempDir "_muxed_$BaseName.mkv"
+        # Avoid collision with temp file if CallingDir == TempDir
+        $MuxTemp = Join-Path $TempDir "_muxed_$BaseName.mkv"
 
-    ffmpeg -y -i $VideoFile.FullName -i $SrtFile.FullName -c copy -c:s srt $MuxTemp
-    if ($LASTEXITCODE -ne 0) { throw "ffmpeg muxing failed." }
+        ffmpeg -y -i $MediaFile.FullName -i $SrtFile.FullName -c copy -c:s srt $MuxTemp
+        if ($LASTEXITCODE -ne 0) { throw "ffmpeg muxing failed." }
 
-    Move-Item -Path $MuxTemp -Destination $OutputFile -Force
-    Copy-Item -Path $SrtFile.FullName -Destination $OutputSrt -Force
-    Write-Host "  Video: $OutputFile" -ForegroundColor Green
-    Write-Host "  Subs:  $OutputSrt" -ForegroundColor Green
+        Move-Item -Path $MuxTemp -Destination $OutputFile -Force
+        Copy-Item -Path $SrtFile.FullName -Destination $OutputSrt -Force
+        Write-Host "  Video: $OutputFile" -ForegroundColor Green
+        Write-Host "  Subs:  $OutputSrt" -ForegroundColor Green
+    }
 
     Write-Host "`nDone!" -ForegroundColor Green
 

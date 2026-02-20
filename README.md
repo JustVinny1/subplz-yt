@@ -9,6 +9,8 @@ A wrapper script that downloads a YouTube video, generates accurate subtitles us
 3. Soft-embeds the subs into the MKV container with ffmpeg (no re-encoding)
 4. Outputs both the video and a standalone `.srt` file to your current directory
 
+With the `-SubsOnly` flag, it downloads just the audio (much faster) and outputs only the `.srt` file.
+
 ## Prerequisites
 
 - Windows 10/11
@@ -55,7 +57,7 @@ deactivate
 ### 3. Install the wrapper script
 
 ```powershell
-git clone https://github.com/YOUR_USERNAME/subplz-yt.git C:\Tools\subplz-yt
+git clone https://github.com/JustVinny1/subplz-yt.git C:\Tools\subplz-yt
 ```
 
 ### 4. Configure environment variables
@@ -75,19 +77,26 @@ Close and reopen your terminal.
 From any directory:
 
 ```powershell
+# Full pipeline: video with embedded subs + standalone .srt
 subplz-yt "https://www.youtube.com/watch?v=VIDEO_ID"
-```
 
-Change the Whisper model (default is `turbo`):
+# Subs only: downloads audio only (much faster), outputs just the .srt
+subplz-yt "https://www.youtube.com/watch?v=VIDEO_ID" -SubsOnly
 
-```powershell
+# Use a different Whisper model
 subplz-yt "https://www.youtube.com/watch?v=VIDEO_ID" -Model large
 ```
 
-Output:
+Output (default):
 
 ```
 VideoTitle.mkv   ← video with embedded subtitles
+VideoTitle.srt   ← standalone subtitle file
+```
+
+Output with `-SubsOnly`:
+
+```
 VideoTitle.srt   ← standalone subtitle file
 ```
 
