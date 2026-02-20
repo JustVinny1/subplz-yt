@@ -33,7 +33,7 @@ if (-not (Test-Path $SubPlzExe)) {
 
 try {
     # --- Step 1: Download ---
-    Write-Host "`n[1/4] Downloading video..." -ForegroundColor Cyan
+    Write-Host "`n[1/3] Downloading video..." -ForegroundColor Cyan
     New-Item -ItemType Directory -Path $TempDir -Force | Out-Null
 
     # Download as mkv to ensure subtitle-compatible container
@@ -47,8 +47,8 @@ try {
     Write-Host "  Downloaded: $($VideoFile.Name)" -ForegroundColor Green
 
     # --- Step 2: Generate subtitles ---
-    Write-Host "`n[2/4] Generating subtitles (model: $Model)..." -ForegroundColor Cyan
-    & $SubPlzExe gen -d $TempDir --model $Model
+    Write-Host "`n[2/3] Generating subtitles (model: $Model)..." -ForegroundColor Cyan
+    & $SubPlzExe gen -d $TempDir --model $Model --vad --stable-ts
 
     # SubPlz may return non-zero even on success, so check for actual output
     $SrtFile = Get-ChildItem -Path $TempDir -Filter "*.srt" | Select-Object -First 1
@@ -56,7 +56,7 @@ try {
     Write-Host "  Generated: $($SrtFile.Name)" -ForegroundColor Green
 
     # --- Step 3: Embed subtitles and copy .srt ---
-    Write-Host "`n[3/4] Embedding subtitles..." -ForegroundColor Cyan
+    Write-Host "`n[3/3] Embedding subtitles..." -ForegroundColor Cyan
     $OutputFile = Join-Path $CallingDir "$BaseName.mkv"
     $OutputSrt = Join-Path $CallingDir "$BaseName.srt"
 
@@ -70,14 +70,6 @@ try {
     Copy-Item -Path $SrtFile.FullName -Destination $OutputSrt -Force
     Write-Host "  Video: $OutputFile" -ForegroundColor Green
     Write-Host "  Subs:  $OutputSrt" -ForegroundColor Green
-
-    # --- Step 4: Play ---
-    Write-Host "`n[4/4] Launching mpv..." -ForegroundColor Cyan
-    if (Get-Command "mpv" -ErrorAction SilentlyContinue) {
-        Start-Process "mpv" -ArgumentList "`"$OutputFile`""
-    } else {
-        Write-Host "  mpv not found on PATH. Open the file manually." -ForegroundColor Yellow
-    }
 
     Write-Host "`nDone!" -ForegroundColor Green
 
