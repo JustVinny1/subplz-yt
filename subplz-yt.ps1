@@ -20,51 +20,88 @@ param(
 
     [switch]$SubsOnly,
 
-    [switch]$Setup
+    [switch]$Setup,
+
+    [Parameter()]
+    [string]$SubPlzPath
 )
 
 $ErrorActionPreference = "Stop"
+
+# --- Discovery Logic for SubPlz ---
+function Get-SubPlzExe {
+    # 1. Check if a path was passed directly via -SubPlzPath
+    if ($SubPlzPath) {
+        $exe = Join-Path $SubPlzPath ".venv\Scripts\subplz.exe"
+        if (Test-Path $exe) { return $exe }
+    }
+
+    # 2. Check Environment Variable
+    if ($env:SUBPLZ_PATH) {
+        $exe = Join-Path $env:SUBPLZ_PATH ".venv\Scripts\subplz.exe"
+        if (Test-Path $exe) { return $exe }
+    }
+
+    # 3. Check for Sibling Directory (Common if both projects are in the same folder)
+    $SiblingDir = Join-Path $PSScriptRoot "..\SubPlz"
+    $exe = Join-Path $SiblingDir ".venv\Scripts\subplz.exe"
+    if (Test-Path $exe) { return $exe }
+
+    # 4. Check Default Location
+    $DefaultDir = "C:\Tools\SubPlz"
+    $exe = Join-Path $DefaultDir ".venv\Scripts\subplz.exe"
+    if (Test-Path $exe) { return $exe }
+
+    # 5. Check if 'subplz' is already on the PATH (e.g. via global install or manual venv activation)
+    $cmd = Get-Command "subplz" -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+
+    return $null
+}
 
 # --- Setup / Auto-Configuration Mode ---
 if ($Setup) {
     Write-Host "--- subplz-yt Setup ---" -ForegroundColor Cyan
     
     $CurrentPath = $PSScriptRoot
-    $DefaultSubPlz = "C:\Tools\SubPlz"
     
     Write-Host "1. Adding script directory to User Path..." -ForegroundColor Gray
     $UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
     if ($UserPath -notlike "*$CurrentPath*") {
         [Environment]::SetEnvironmentVariable("Path", $UserPath + ";$CurrentPath", "User")
-        Write-Host "   Done. (Note: You may need to restart your terminal)" -ForegroundColor Green
+        Write-Host "   Done: $CurrentPath added to Path." -ForegroundColor Green
     } else {
         Write-Host "   Already in Path." -ForegroundColor Green
     }
 
     Write-Host "2. Configuring SUBPLZ_PATH..." -ForegroundColor Gray
-    if (-not $env:SUBPLZ_PATH) {
-        if (Test-Path $DefaultSubPlz) {
-            [Environment]::SetEnvironmentVariable("SUBPLZ_PATH", $DefaultSubPlz, "User")
-            Write-Host "   Set to $DefaultSubPlz" -ForegroundColor Green
-        } else {
-            Write-Host "   Warning: $DefaultSubPlz not found. Please set SUBPLZ_PATH manually." -ForegroundColor Yellow
-        }
-    } else {
-        Write-Host "   SUBPLZ_PATH already set to $($env:SUBPLZ_PATH)" -ForegroundColor Green
+    $DetectedExe = Get-SubPlzExe
+    $ResolvedPath = ""
+
+    if ($SubPlzPath) {
+        $ResolvedPath = Resolve-Path $SubPlzPath
+    } elseif ($DetectedExe) {
+        $ResolvedPath = Split-Path (Split-Path (Split-Path $DetectedExe -Parent) -Parent) -Parent
     }
 
-    Write-Host "`nSetup checks complete. Restart your terminal if this is your first time." -ForegroundColor Cyan
+    if ($ResolvedPath -and (Test-Path (Join-Path $ResolvedPath ".venv\Scripts\subplz.exe"))) {
+        [Environment]::SetEnvironmentVariable("SUBPLZ_PATH", $ResolvedPath, "User")
+        Write-Host "   Set SUBPLZ_PATH to $ResolvedPath" -ForegroundColor Green
+    } else {
+        Write-Host "   Warning: Could not automatically find a valid SubPlz installation." -ForegroundColor Yellow
+        Write-Host "   Please run: subplz-yt -Setup -SubPlzPath 'C:\your\path\to\SubPlz'" -ForegroundColor Gray
+    }
+
+    Write-Host "`nSetup complete. Restart your terminal for changes to take effect." -ForegroundColor Cyan
     exit 0
 }
 
 if (-not $Url) {
-    Write-Error "URL is required. Usage: subplz-yt <URL>"
+    Write-Error "URL is required. Usage: subplz-yt <URL>`nOr run: subplz-yt -Setup"
     exit 1
 }
 
-$CallingDir = (Get-Location).Path
-$SubPlzRoot = if ($env:SUBPLZ_PATH) { $env:SUBPLZ_PATH } else { "C:\Tools\SubPlz" }
-$SubPlzExe = Join-Path $SubPlzRoot ".venv\Scripts\subplz.exe"
+$SubPlzExe = Get-SubPlzExe
 $TempDir = Join-Path $env:TEMP "subplz-work-$(Get-Random)"
 
 # --- Preflight checks ---
