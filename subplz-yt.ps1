@@ -3,12 +3,9 @@
     Download a YouTube video, generate subtitles with SubPlz, and embed them.
 .USAGE
     subplz-yt "https://www.youtube.com/watch?v=VIDEO_ID"
-    subplz-yt "https://www.youtube.com/watch?v=VIDEO_ID" -Model large
-    subplz-yt "https://www.youtube.com/watch?v=VIDEO_ID" -SubsOnly
     subplz-yt -Setup
 .CONFIGURATION
-    Set the SUBPLZ_PATH environment variable to your SubPlz installation directory.
-    Defaults to C:\Tools\SubPlz if not set.
+    Run with -Setup to configure dependencies.
 #>
 
 param(
@@ -28,109 +25,131 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# --- Helper Function for Interactive Confirmation ---
+function Confirm-Action {
+    param([string]$Message)
+    $host.ui.Write("`n$Message [Y/N]: ")
+    $choice = $host.ui.ReadLine()
+    return ($choice -match '^[yY]')
+}
+
 # --- Discovery Logic for SubPlz ---
 function Get-SubPlzExe {
-    # 1. Check if a path was passed directly via -SubPlzPath
     if ($SubPlzPath) {
         $exe = Join-Path $SubPlzPath ".venv\Scripts\subplz.exe"
         if (Test-Path $exe) { return $exe }
     }
-
-    # 2. Check Environment Variable
     if ($env:SUBPLZ_PATH) {
         $exe = Join-Path $env:SUBPLZ_PATH ".venv\Scripts\subplz.exe"
         if (Test-Path $exe) { return $exe }
     }
-
-    # 3. Check for Child/Sibling Directory
     $ChildDir = Join-Path $PSScriptRoot "SubPlz"
     $SiblingDir = Join-Path $PSScriptRoot "..\SubPlz"
-    
     foreach ($dir in @($ChildDir, $SiblingDir)) {
         $exe = Join-Path $dir ".venv\Scripts\subplz.exe"
         if (Test-Path $exe) { return $exe }
     }
-
-    # 4. Check Default Location
-    $DefaultDir = "C:\Tools\SubPlz"
-    $exe = Join-Path $DefaultDir ".venv\Scripts\subplz.exe"
-    if (Test-Path $exe) { return $exe }
-
-    # 5. Check if 'subplz' is already on the PATH (e.g. via global install or manual venv activation)
     $cmd = Get-Command "subplz" -ErrorAction SilentlyContinue
     if ($cmd) { return $cmd.Source }
-
     return $null
 }
 
 # --- Setup / Auto-Configuration Mode ---
 if ($Setup) {
-    Write-Host "`n--- subplz-yt Full Setup ---" -ForegroundColor Cyan
+    Write-Host "`n--- subplz-yt Setup ---" -ForegroundColor Cyan
+    Write-Host "This guide will check for dependencies and ask before making system-wide changes." -ForegroundColor Gray
     
-    # 1. Install System Dependencies
-    Write-Host "`n[1/4] Checking system tools (winget)..." -ForegroundColor Gray
-    $Tools = @("Git.Git", "astral-sh.uv", "ffmpeg")
-    foreach ($tool in $Tools) {
-        if (-not (Get-Command $tool.Split('.')[-1] -ErrorAction SilentlyContinue)) {
-            Write-Host "   Installing $tool..." -ForegroundColor Gray
-            & winget install $tool --accept-source-agreements --accept-package-agreements | Out-Null
-        } else {
-            Write-Host "   $($tool.Split('.')[-1]) is already installed." -ForegroundColor Green
-        }
-    }
-
-    # 2. Install yt-dlp
-    Write-Host "`n[2/4] Checking yt-dlp..." -ForegroundColor Gray
-    if (-not (Get-Command "yt-dlp" -ErrorAction SilentlyContinue)) {
-        Write-Host "   Installing yt-dlp via uv..." -ForegroundColor Gray
-        & uv tool install yt-dlp | Out-Null
-    } else {
-        Write-Host "   yt-dlp is already installed." -ForegroundColor Green
-    }
-
-    # 3. Install/Configure SubPlz
-    Write-Host "`n[3/4] Checking SubPlz..." -ForegroundColor Gray
-    $SubPlzRoot = Join-Path $PSScriptRoot "SubPlz"
-    if (-not (Test-Path $SubPlzRoot)) {
-        Write-Host "   Cloning SubPlz into $SubPlzRoot..." -ForegroundColor Gray
-        & git clone https://github.com/kanjieater/SubPlz.git $SubPlzRoot | Out-Null
-    }
-
-    $SubPlzExe = Join-Path $SubPlzRoot ".venv\Scripts\subplz.exe"
-    if (-not (Test-Path $SubPlzExe)) {
-        Write-Host "   Setting up SubPlz virtual environment (this may take a minute)..." -ForegroundColor Gray
-        Push-Location $SubPlzRoot
-        try {
-            & uv venv --python 3.11 .venv | Out-Null
-            & .\.venv\Scripts\uv pip install -e . | Out-Null
-            & .\.venv\Scripts\pip.exe install "setuptools<78" | Out-Null
-            
-            # Check for NVIDIA GPU
-            if (Get-Command "nvidia-smi" -ErrorAction SilentlyContinue) {
-                Write-Host "   NVIDIA GPU detected. Installing CUDA-enabled PyTorch..." -ForegroundColor Gray
-                & .\.venv\Scripts\pip.exe install torch torchaudio --index-url https://download.pytorch.org/whl/cu128 --force-reinstall | Out-Null
+    # 1. System Tools (Global)
+    Write-Host "`n[1/4] Checking system tools..." -ForegroundColor Cyan
+    $Tools = @{ "Git.Git" = "git"; "astral-sh.uv" = "uv"; "ffmpeg" = "ffmpeg" }
+    foreach ($pkg in $Tools.Keys) {
+        $cmdName = $Tools[$pkg]
+        if (-not (Get-Command $cmdName -ErrorAction SilentlyContinue)) {
+            Write-Host "  - $cmdName is NOT installed." -ForegroundColor Yellow
+            if (Confirm-Action "Install $cmdName via winget (global)?") {
+                Write-Host "    Installing $pkg..." -ForegroundColor Gray
+                & winget install $pkg --accept-source-agreements --accept-package-agreements | Out-Null
+                Write-Host "    Successfully installed $cmdName." -ForegroundColor Green
             }
-        } finally {
-            Pop-Location
+        } else {
+            Write-Host "  - $cmdName is already installed." -ForegroundColor Green
         }
     }
-    
-    # Configure Environment Variable
-    [Environment]::SetEnvironmentVariable("SUBPLZ_PATH", $SubPlzRoot, "User")
-    $env:SUBPLZ_PATH = $SubPlzRoot
-    Write-Host "   SubPlz configured at $SubPlzRoot" -ForegroundColor Green
 
-    # 4. Path Configuration
-    Write-Host "`n[4/4] Configuring User PATH..." -ForegroundColor Gray
+    # 2. yt-dlp (Global via uv)
+    Write-Host "`n[2/4] Checking yt-dlp..." -ForegroundColor Cyan
+    if (-not (Get-Command "yt-dlp" -ErrorAction SilentlyContinue)) {
+        Write-Host "  - yt-dlp is NOT installed." -ForegroundColor Yellow
+        if (Confirm-Action "Install yt-dlp via uv (global)?") {
+            & uv tool install yt-dlp | Out-Null
+            Write-Host "    Successfully installed yt-dlp." -ForegroundColor Green
+        }
+    } else {
+        Write-Host "  - yt-dlp is already installed." -ForegroundColor Green
+    }
+
+    # 3. SubPlz (Local)
+    Write-Host "`n[3/4] Checking SubPlz (AI engine)..." -ForegroundColor Cyan
+    $DetectedExe = Get-SubPlzExe
+    $SubPlzRoot = ""
+
+    if ($DetectedExe) {
+        $SubPlzRoot = Split-Path (Split-Path (Split-Path $DetectedExe -Parent) -Parent) -Parent
+        Write-Host "  - SubPlz found at: $SubPlzRoot" -ForegroundColor Green
+    } else {
+        Write-Host "  - SubPlz not found in standard locations." -ForegroundColor Yellow
+        $DefaultSubPlz = Join-Path $PSScriptRoot "SubPlz"
+        if (Confirm-Action "Clone SubPlz into a local subdirectory ($DefaultSubPlz)?") {
+            Write-Host "    Cloning SubPlz..." -ForegroundColor Gray
+            & git clone https://github.com/kanjieater/SubPlz.git $DefaultSubPlz | Out-Null
+            $SubPlzRoot = $DefaultSubPlz
+        }
+    }
+
+    if ($SubPlzRoot -and (Test-Path $SubPlzRoot)) {
+        $SubPlzExe = Join-Path $SubPlzRoot ".venv\Scripts\subplz.exe"
+        if (-not (Test-Path $SubPlzExe)) {
+            Write-Host "  - SubPlz virtual environment needs setup (contains AI libraries)." -ForegroundColor Yellow
+            if (Confirm-Action "Set up the local environment (~2GB download)?") {
+                Write-Host "    Building environment..." -ForegroundColor Gray
+                Push-Location $SubPlzRoot
+                try {
+                    & uv venv --python 3.11 .venv | Out-Null
+                    & .\.venv\Scripts\uv pip install -e . | Out-Null
+                    & .\.venv\Scripts\pip.exe install "setuptools<78" | Out-Null
+                    if (Get-Command "nvidia-smi" -ErrorAction SilentlyContinue) {
+                        Write-Host "    NVIDIA GPU detected. Installing CUDA support..." -ForegroundColor Gray
+                        & .\.venv\Scripts\pip.exe install torch torchaudio --index-url https://download.pytorch.org/whl/cu128 --force-reinstall | Out-Null
+                    }
+                    Write-Host "    Environment setup complete." -ForegroundColor Green
+                } finally {
+                    Pop-Location
+                }
+            }
+        } else {
+            if ($DetectedExe) {
+                Write-Host "  - SubPlz environment is ready." -ForegroundColor Green
+            }
+        }
+        
+        # Configure Environment Variable
+        [Environment]::SetEnvironmentVariable("SUBPLZ_PATH", $SubPlzRoot, "User")
+        $env:SUBPLZ_PATH = $SubPlzRoot
+    }
+
+    # 4. Path Configuration (Global)
+    Write-Host "`n[4/4] Finalizing configuration..." -ForegroundColor Cyan
     $UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
     if ($UserPath -notlike "*$PSScriptRoot*") {
-        [Environment]::SetEnvironmentVariable("Path", $UserPath + ";$PSScriptRoot", "User")
-        Write-Host "   Added $PSScriptRoot to User Path." -ForegroundColor Green
+        if (Confirm-Action "Add this script to your User PATH (allows running 'subplz-yt' from any folder)?") {
+            [Environment]::SetEnvironmentVariable("Path", $UserPath + ";$PSScriptRoot", "User")
+            Write-Host "    Added to User Path." -ForegroundColor Green
+        }
     } else {
-        Write-Host "   Script directory is already in Path." -ForegroundColor Green
+        Write-Host "  - Script folder is already in Path." -ForegroundColor Green
     }
 
-    Write-Host "`nSetup Complete! Please RESTART your terminal to apply all changes." -ForegroundColor Cyan
+    Write-Host "`nSetup process finished. Please RESTART your terminal to apply changes." -ForegroundColor Cyan
     exit 0
 }
 
@@ -139,48 +158,37 @@ if (-not $Url) {
     exit 1
 }
 
+$CallingDir = (Get-Location).Path
 $SubPlzExe = Get-SubPlzExe
 $TempDir = Join-Path $env:TEMP "subplz-work-$(Get-Random)"
 
 # --- Preflight checks ---
 Write-Host "Checking dependencies..." -ForegroundColor Gray
 
-# 1. yt-dlp check
 if (-not (Get-Command "yt-dlp" -ErrorAction SilentlyContinue)) {
-    Write-Error "yt-dlp not found on PATH. Install it with: uv tool install yt-dlp"
+    Write-Error "yt-dlp not found. Run 'subplz-yt -Setup' to install it."
     exit 1
 }
-try {
-    & yt-dlp --version | Out-Null
-} catch {
-    Write-Error "yt-dlp is present but failing to run. Try: uv tool install yt-dlp --reinstall"
+try { & yt-dlp --version | Out-Null } catch {
+    Write-Error "yt-dlp is broken. Try: uv tool install yt-dlp --reinstall"
     exit 1
 }
 
-# 2. ffmpeg check
 if (-not (Get-Command "ffmpeg" -ErrorAction SilentlyContinue)) {
-    Write-Error "ffmpeg not found on PATH. Install it via winget or your preferred manager."
+    Write-Error "ffmpeg not found. Run 'subplz-yt -Setup' to install it."
     exit 1
 }
 
-# 3. SubPlz check
-if (-not (Test-Path $SubPlzExe)) {
-    Write-Error "SubPlz not found at $SubPlzExe. Set SUBPLZ_PATH or install it to C:\Tools\SubPlz."
+if (-not $SubPlzExe) {
+    Write-Error "SubPlz not found. Run 'subplz-yt -Setup' to configure it."
     exit 1
 }
-try {
-    # Check if the environment is healthy by trying to run it
-    & $SubPlzExe --help | Out-Null
-} catch {
-    Write-Error "SubPlz environment is broken. Try running this in your SubPlz folder:`n.venv\Scripts\pip.exe install `"setuptools<78`" torch torchaudio"
+try { & $SubPlzExe --help | Out-Null } catch {
+    Write-Error "SubPlz environment is broken. Run 'subplz-yt -Setup' to attempt a repair."
     exit 1
 }
 
-if ($SubsOnly) {
-    $TotalSteps = 2
-} else {
-    $TotalSteps = 3
-}
+if ($SubsOnly) { $TotalSteps = 2 } else { $TotalSteps = 3 }
 
 try {
     # --- Step 1: Download ---
@@ -204,12 +212,10 @@ try {
     Write-Host "`n[2/$TotalSteps] Generating subtitles (model: $Model)..." -ForegroundColor Cyan
     & $SubPlzExe gen -d $TempDir --model $Model --vad --stable-ts
 
-    # SubPlz may return non-zero even on success, so check for actual output
     $SrtFile = Get-ChildItem -Path $TempDir -Filter "*.srt" | Select-Object -First 1
     if (-not $SrtFile) { throw "No subtitle file generated. SubPlz may have failed." }
     Write-Host "  Generated: $($SrtFile.Name)" -ForegroundColor Green
 
-    # Ensure output filenames are unique in the calling directory
     $FinalBase = $BaseName
     $Counter = 1
     while ((Test-Path (Join-Path $CallingDir "$FinalBase.mkv")) -or (Test-Path (Join-Path $CallingDir "$FinalBase.srt"))) {
@@ -226,25 +232,18 @@ try {
         Write-Host "`n[3/$TotalSteps] Embedding subtitles..." -ForegroundColor Cyan
         $OutputFile = Join-Path $CallingDir "$FinalBase.mkv"
         $OutputSrt = Join-Path $CallingDir "$FinalBase.srt"
-
         $MuxTemp = Join-Path $TempDir "_muxed_$($MediaFile.Name)"
-        
         & ffmpeg -y -i $MediaFile.FullName -i $SrtFile.FullName -c copy -c:s srt $MuxTemp 2>$null
         if ($LASTEXITCODE -ne 0) { throw "ffmpeg muxing failed." }
-
         Move-Item -Path $MuxTemp -Destination $OutputFile -Force
         Copy-Item -Path $SrtFile.FullName -Destination $OutputSrt -Force
         Write-Host "  Video: $OutputFile" -ForegroundColor Green
         Write-Host "  Subs:  $OutputSrt" -ForegroundColor Green
     }
-
     Write-Host "`nDone!" -ForegroundColor Green
-
 } catch {
     Write-Host "`nError: $($_.Exception.Message)" -ForegroundColor Red
     exit 1
 } finally {
-    if (Test-Path $TempDir) {
-        Remove-Item -Recurse -Force $TempDir -ErrorAction SilentlyContinue
-    }
+    if (Test-Path $TempDir) { Remove-Item -Recurse -Force $TempDir -ErrorAction SilentlyContinue }
 }
