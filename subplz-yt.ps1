@@ -42,10 +42,14 @@ function Get-SubPlzExe {
         if (Test-Path $exe) { return $exe }
     }
 
-    # 3. Check for Sibling Directory (Common if both projects are in the same folder)
+    # 3. Check for Child/Sibling Directory
+    $ChildDir = Join-Path $PSScriptRoot "SubPlz"
     $SiblingDir = Join-Path $PSScriptRoot "..\SubPlz"
-    $exe = Join-Path $SiblingDir ".venv\Scripts\subplz.exe"
-    if (Test-Path $exe) { return $exe }
+    
+    foreach ($dir in @($ChildDir, $SiblingDir)) {
+        $exe = Join-Path $dir ".venv\Scripts\subplz.exe"
+        if (Test-Path $exe) { return $exe }
+    }
 
     # 4. Check Default Location
     $DefaultDir = "C:\Tools\SubPlz"
@@ -61,38 +65,72 @@ function Get-SubPlzExe {
 
 # --- Setup / Auto-Configuration Mode ---
 if ($Setup) {
-    Write-Host "--- subplz-yt Setup ---" -ForegroundColor Cyan
+    Write-Host "`n--- subplz-yt Full Setup ---" -ForegroundColor Cyan
     
-    $CurrentPath = $PSScriptRoot
+    # 1. Install System Dependencies
+    Write-Host "`n[1/4] Checking system tools (winget)..." -ForegroundColor Gray
+    $Tools = @("Git.Git", "astral-sh.uv", "ffmpeg")
+    foreach ($tool in $Tools) {
+        if (-not (Get-Command $tool.Split('.')[-1] -ErrorAction SilentlyContinue)) {
+            Write-Host "   Installing $tool..." -ForegroundColor Gray
+            & winget install $tool --accept-source-agreements --accept-package-agreements | Out-Null
+        } else {
+            Write-Host "   $($tool.Split('.')[-1]) is already installed." -ForegroundColor Green
+        }
+    }
+
+    # 2. Install yt-dlp
+    Write-Host "`n[2/4] Checking yt-dlp..." -ForegroundColor Gray
+    if (-not (Get-Command "yt-dlp" -ErrorAction SilentlyContinue)) {
+        Write-Host "   Installing yt-dlp via uv..." -ForegroundColor Gray
+        & uv tool install yt-dlp | Out-Null
+    } else {
+        Write-Host "   yt-dlp is already installed." -ForegroundColor Green
+    }
+
+    # 3. Install/Configure SubPlz
+    Write-Host "`n[3/4] Checking SubPlz..." -ForegroundColor Gray
+    $SubPlzRoot = Join-Path $PSScriptRoot "SubPlz"
+    if (-not (Test-Path $SubPlzRoot)) {
+        Write-Host "   Cloning SubPlz into $SubPlzRoot..." -ForegroundColor Gray
+        & git clone https://github.com/kanjieater/SubPlz.git $SubPlzRoot | Out-Null
+    }
+
+    $SubPlzExe = Join-Path $SubPlzRoot ".venv\Scripts\subplz.exe"
+    if (-not (Test-Path $SubPlzExe)) {
+        Write-Host "   Setting up SubPlz virtual environment (this may take a minute)..." -ForegroundColor Gray
+        Push-Location $SubPlzRoot
+        try {
+            & uv venv --python 3.11 .venv | Out-Null
+            & .\.venv\Scripts\uv pip install -e . | Out-Null
+            & .\.venv\Scripts\pip.exe install "setuptools<78" | Out-Null
+            
+            # Check for NVIDIA GPU
+            if (Get-Command "nvidia-smi" -ErrorAction SilentlyContinue) {
+                Write-Host "   NVIDIA GPU detected. Installing CUDA-enabled PyTorch..." -ForegroundColor Gray
+                & .\.venv\Scripts\pip.exe install torch torchaudio --index-url https://download.pytorch.org/whl/cu128 --force-reinstall | Out-Null
+            }
+        } finally {
+            Pop-Location
+        }
+    }
     
-    Write-Host "1. Adding script directory to User Path..." -ForegroundColor Gray
+    # Configure Environment Variable
+    [Environment]::SetEnvironmentVariable("SUBPLZ_PATH", $SubPlzRoot, "User")
+    $env:SUBPLZ_PATH = $SubPlzRoot
+    Write-Host "   SubPlz configured at $SubPlzRoot" -ForegroundColor Green
+
+    # 4. Path Configuration
+    Write-Host "`n[4/4] Configuring User PATH..." -ForegroundColor Gray
     $UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
-    if ($UserPath -notlike "*$CurrentPath*") {
-        [Environment]::SetEnvironmentVariable("Path", $UserPath + ";$CurrentPath", "User")
-        Write-Host "   Done: $CurrentPath added to Path." -ForegroundColor Green
+    if ($UserPath -notlike "*$PSScriptRoot*") {
+        [Environment]::SetEnvironmentVariable("Path", $UserPath + ";$PSScriptRoot", "User")
+        Write-Host "   Added $PSScriptRoot to User Path." -ForegroundColor Green
     } else {
-        Write-Host "   Already in Path." -ForegroundColor Green
+        Write-Host "   Script directory is already in Path." -ForegroundColor Green
     }
 
-    Write-Host "2. Configuring SUBPLZ_PATH..." -ForegroundColor Gray
-    $DetectedExe = Get-SubPlzExe
-    $ResolvedPath = ""
-
-    if ($SubPlzPath) {
-        $ResolvedPath = Resolve-Path $SubPlzPath
-    } elseif ($DetectedExe) {
-        $ResolvedPath = Split-Path (Split-Path (Split-Path $DetectedExe -Parent) -Parent) -Parent
-    }
-
-    if ($ResolvedPath -and (Test-Path (Join-Path $ResolvedPath ".venv\Scripts\subplz.exe"))) {
-        [Environment]::SetEnvironmentVariable("SUBPLZ_PATH", $ResolvedPath, "User")
-        Write-Host "   Set SUBPLZ_PATH to $ResolvedPath" -ForegroundColor Green
-    } else {
-        Write-Host "   Warning: Could not automatically find a valid SubPlz installation." -ForegroundColor Yellow
-        Write-Host "   Please run: subplz-yt -Setup -SubPlzPath 'C:\your\path\to\SubPlz'" -ForegroundColor Gray
-    }
-
-    Write-Host "`nSetup complete. Restart your terminal for changes to take effect." -ForegroundColor Cyan
+    Write-Host "`nSetup Complete! Please RESTART your terminal to apply all changes." -ForegroundColor Cyan
     exit 0
 }
 
