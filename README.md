@@ -44,33 +44,17 @@ uv pip install -e .
 .venv\Scripts\pip.exe install "setuptools<78"
 ```
 
-> **Why setuptools<78?** Newer versions removed `pkg_resources`, which `ctranslate2` (a SubPlz dependency) still requires.
-
-For **NVIDIA GPU** users, install PyTorch with CUDA (with the venv still active):
-
-```powershell
-.venv\Scripts\pip.exe install torch torchaudio --index-url https://download.pytorch.org/whl/cu128 --force-reinstall
-python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
-deactivate
-```
-
-### 3. Install the wrapper script
+### 3. Install and Configure the wrapper script
 
 ```powershell
 git clone https://github.com/JustVinny1/subplz-yt.git C:\Tools\subplz-yt
+cd C:\Tools\subplz-yt
+.\subplz-yt.ps1 -Setup
 ```
 
-### 4. Configure environment variables
+The `-Setup` flag automatically adds the script to your User Path and configures the `SUBPLZ_PATH` environment variable (defaulting to `C:\Tools\SubPlz`).
 
-Run these once to set everything up. If you installed SubPlz somewhere other than `C:\Tools\SubPlz`, change the `SUBPLZ_PATH` value accordingly.
-
-```powershell
-[Environment]::SetEnvironmentVariable("Path", $env:Path + ";C:\Tools\subplz-yt", "User")
-[Environment]::SetEnvironmentVariable("SUBPLZ_PATH", "C:\Tools\SubPlz", "User")
-[Environment]::SetEnvironmentVariable("BASE_PATH", "C:\Tools\SubPlz\config", "User")
-```
-
-Close and reopen your terminal.
+Close and reopen your terminal after running setup.
 
 ## Usage
 
@@ -85,7 +69,17 @@ subplz-yt "https://www.youtube.com/watch?v=VIDEO_ID" -SubsOnly
 
 # Use a different Whisper model
 subplz-yt "https://www.youtube.com/watch?v=VIDEO_ID" -Model large
+
+# Re-run configuration or add to path
+subplz-yt -Setup
 ```
+
+## Improvements in this version
+
+- **Robust Health Checks:** Automatically verifies that `yt-dlp`, `ffmpeg`, and `SubPlz` are functional, not just installed.
+- **Self-Healing Hints:** If a dependency is broken (common with `uv` or Python updates), the script provides the exact command to fix it.
+- **Smart Naming:** Automatically handles file name collisions by appending numbers (e.g., `Video (1).mkv`).
+- **Easy Setup:** The `-Setup` flag automates the environment variable configuration.
 
 Output (default):
 
