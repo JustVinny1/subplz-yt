@@ -18,33 +18,45 @@ With the `-SubsOnly` flag, it downloads just the audio (much faster) and outputs
 
 ## Installation
 
-### 1. Install tools
+This script requires `yt-dlp`, `ffmpeg`, and `SubPlz`. Follow these steps for a robust setup:
+
+### 1. Install Global Dependencies
+Open PowerShell as an Administrator (or a standard user if you have `winget` configured) and run:
 
 ```powershell
-winget install Git.Git
-winget install astral-sh.uv
-winget install ffmpeg
-```
+# Install core tools
+winget install Git.Git astral-sh.uv ffmpeg
 
-Close and reopen your terminal, then install yt-dlp:
-
-```powershell
+# Install yt-dlp globally via uv
 uv tool install yt-dlp
 uv tool update-shell
 ```
 
-### 2. Install SubPlz from source
+*Restart your terminal after this step.*
+
+### 2. Install SubPlz (The Engine)
+Clone and set up the SubPlz project. It is recommended to put it in a folder like `C:\Tools\SubPlz`.
 
 ```powershell
 git clone https://github.com/kanjieater/SubPlz.git C:\Tools\SubPlz
 cd C:\Tools\SubPlz
+
+# Create environment and install
 uv venv --python 3.11 .venv
 .venv\Scripts\activate
 uv pip install -e .
 .venv\Scripts\pip.exe install "setuptools<78"
 ```
 
-### 3. Install and Configure the wrapper script
+**NVIDIA GPU Users (Recommended):**
+Accelerate transcription by 10x by installing CUDA-enabled PyTorch:
+```powershell
+.venv\Scripts\pip.exe install torch torchaudio --index-url https://download.pytorch.org/whl/cu128 --force-reinstall
+deactivate
+```
+
+### 3. Install and Configure this Script
+Clone this repository and run the automated setup.
 
 ```powershell
 git clone https://github.com/JustVinny1/subplz-yt.git C:\Tools\subplz-yt
@@ -52,9 +64,34 @@ cd C:\Tools\subplz-yt
 .\subplz-yt.ps1 -Setup
 ```
 
-The `-Setup` flag automatically adds the script to your User Path and configures the `SUBPLZ_PATH` environment variable (defaulting to `C:\Tools\SubPlz`).
+**The `-Setup` flag will:**
+- Automatically detect your SubPlz installation.
+- Add this script to your User `PATH` so you can run `subplz-yt` from any folder.
+- Configure necessary environment variables.
 
-Close and reopen your terminal after running setup.
+*If you installed SubPlz in a non-standard location, run: `.\subplz-yt.ps1 -Setup -SubPlzPath "C:\Your\Path"`*
+
+---
+
+## Troubleshooting
+
+### `yt-dlp failed` or `missing python.exe`
+If `uv` updates or its cache is cleared, the `yt-dlp` environment can break. Fix it instantly with:
+```powershell
+uv tool install yt-dlp --reinstall
+```
+
+### `SubPlz environment is broken`
+If you see errors about `pkg_resources` or `setuptools`, run this inside your SubPlz folder:
+```powershell
+.venv\Scripts\pip.exe install "setuptools<78"
+```
+
+### Script execution is blocked
+If Windows prevents running the script, run this once:
+```powershell
+Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
 
 ## Usage
 
